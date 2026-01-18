@@ -54,8 +54,6 @@ with st.form("add_product_form", clear_on_submit=True):
         else:
             st.warning("Proszę podać nazwę produktu.")
 
----
-
 # --- SEKCJA 2: LISTA I USUWANIE ---
 
 st.header("📋 Aktualna lista produktów")
