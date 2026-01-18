@@ -2,37 +2,41 @@ import streamlit as st
 from supabase import create_client, Client
 
 # --- KONFIGURACJA POŁĄCZENIA ---
-# Upewnij się, że w Streamlit Cloud Secrets masz SUPABASE_URL i SUPABASE_KEY
 try:
     url = st.secrets["SUPABASE_URL"]
     key = st.secrets["SUPABASE_KEY"]
     supabase: Client = create_client(url, key)
 except Exception as e:
-    st.error("Błąd konfiguracji Secrets. Sprawdź, czy dodałeś SUPABASE_URL i SUPABASE_KEY.")
+    st.error("Błąd konfiguracji Secrets. Sprawdź ustawienia w Streamlit Cloud.")
     st.stop()
 
 st.set_page_config(page_title="Zarządzanie Magazynem", layout="wide")
 
-# --- FUNKCJE LOGICZNE ---
+# --- FUNKCJE POMOCNICZE ---
+
+def safe_float(value):
+    """Bezpiecznie konwertuje wartość na float, obsługując None i Stringi."""
+    try:
+        return float(value) if value is not None else 0.0
+    except (ValueError, TypeError):
+        return 0.0
 
 def fetch_categories():
-    """Pobiera listę kategorii do selectboxa."""
     res = supabase.table("kategorie").select("id, nazwa").execute()
     return res.data
 
 def fetch_products():
-    """Pobiera produkty wraz z danymi powiązanej kategorii."""
-    # Używamy select z relacją do tabeli kategorie
+    # Pobieramy dane z relacją do kategorii
     res = supabase.table("produkty").select("id, nazwa, liczba, cena, kategorie(nazwa)").execute()
     return res.data
 
-# --- INTERFEJS UŻYTKOWNIKA ---
+# --- INTERFEJS ---
 
 st.title("📦 System Zarządzania Produktami")
 
-# Boczne menu - Dodawanie produktów
+# SideBar - Dodawanie
 with st.sidebar:
-    st.header("➕ Dodaj nowy produkt")
+    st.header("➕ Dodaj produkt")
     categories = fetch_categories()
     cat_options = {c['nazwa']: c['id'] for c in categories}
     
@@ -51,36 +55,33 @@ with st.sidebar:
                     "kategoria_id": cat_options[new_kat]
                 }
                 supabase.table("produkty").insert(payload).execute()
-                st.success("Dodano produkt!")
+                st.success("Dodano!")
                 st.rerun()
-            else:
-                st.warning("Nazwa jest wymagana.")
 
-# Główny widok - Tabela produktów
-st.header("📋 Lista produktów w bazie")
+# Główna tabela
+st.header("📋 Lista produktów")
 products = fetch_products()
 
 if not products:
-    st.info("Baza produktów jest obecnie pusta.")
+    st.info("Baza jest pusta.")
 else:
-    # Nagłówki tabeli
     cols = st.columns([1, 3, 2, 2, 3, 1])
-    cols[0].write("**ID**")
-    cols[1].write("**Nazwa**")
-    cols[2].write("**Ilość**")
-    cols[3].write("**Cena**")
-    cols[4].write("**Kategoria**")
-    cols[5].write("**Akcja**")
+    headers = ["ID", "Nazwa", "Ilość", "Cena", "Kategoria", "Akcja"]
+    for col, header in zip(cols, headers):
+        col.write(f"**{header}**")
     
     st.divider()
 
     for p in products:
         c1, c2, c3, c4, c5, c6 = st.columns([1, 3, 2, 2, 3, 1])
         
-        # Wyciąganie nazwy kategorii - ROZWIĄZANIE TWOJEGO BŁĘDU:
+        # 1. Naprawa błędu formatowania Ceny i Liczby
+        cena_val = safe_float(p.get('cena'))
+        liczba_val = safe_float(p.get('liczba'))
+        
+        # 2. Naprawa błędu nazwy kategorii
         kat_raw = p.get('kategorie')
         nazwa_kategorii = "Brak"
-        
         if isinstance(kat_raw, dict):
             nazwa_kategorii = kat_raw.get('nazwa', 'Brak')
         elif isinstance(kat_raw, list) and len(kat_raw) > 0:
@@ -88,12 +89,10 @@ else:
 
         c1.write(p['id'])
         c2.write(f"**{p['nazwa']}**")
-        c3.write(str(p['liczba']))
-        c4.write(f"{p['cena']:.2f} zł")
+        c3.write(f"{liczba_val}")
+        c4.write(f"{cena_val:.2f} zł") # Teraz cena_val to na pewno float
         c5.write(f"📁 {nazwa_kategorii}")
         
-        # Przycisk usuwania
         if c6.button("🗑️", key=f"del_{p['id']}"):
             supabase.table("produkty").delete().eq("id", p['id']).execute()
-            st.toast(f"Usunięto: {p['nazwa']}")
             st.rerun()
