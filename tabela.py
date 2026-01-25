@@ -12,35 +12,29 @@ except Exception:
     st.error("Błąd konfiguracji Secrets. Sprawdź SUPABASE_URL i SUPABASE_KEY.")
     st.stop()
 
-st.set_page_config(page_title="ProStock ERP v4.0", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="ProStock ERP v5.0", layout="wide")
 
-# --- 2. ZAAWANSOWANY DESIGN (CSS) ---
+# --- 2. NOWOCZESNY DESIGN CSS ---
 st.markdown("""
     <style>
-    /* Tło i ogólny styl */
-    .stApp {
-        background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+    .main {
+        background: linear-gradient(135deg, #1a1a2e, #16213e);
         color: white;
     }
-    /* Karty metryk */
-    div[data-testid="stMetric"] {
+    .stMetric {
         background: rgba(255, 255, 255, 0.05);
-        border-radius: 15px;
-        padding: 15px;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        backdrop-filter: blur(10px);
-    }
-    /* Stylizacja tabeli */
-    .stDataFrame {
-        border: 1px solid rgba(0, 212, 255, 0.2);
         border-radius: 10px;
+        padding: 15px;
+        border-left: 5px solid #00d4ff;
     }
-    /* Nagłówki */
-    h1, h2, h3 {
-        font-family: 'Segoe UI', sans-serif;
-        font-weight: 700;
-        letter-spacing: -1px;
+    .product-card {
+        background: rgba(255, 255, 255, 0.1);
+        padding: 20px;
+        border-radius: 15px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        margin-bottom: 10px;
     }
+    h1, h2, h3 { color: #00d4ff !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -50,21 +44,19 @@ def safe_float(value):
     try: return float(value) if value is not None else 0.0
     except: return 0.0
 
-def fetch_all_data():
-    # Pobieramy produkty i kategorie w jednym zapytaniu
+def fetch_data():
     prods = supabase.table("produkty").select("id, nazwa, liczba, cena, kategoria_id, kategorie(nazwa)").execute()
     cats = supabase.table("kategorie").select("id, nazwa").execute()
     return prods.data, cats.data
 
-# Pobieranie danych
-products_raw, categories_raw = fetch_all_data()
+products_raw, categories_raw = fetch_data()
 
 # Przetwarzanie do DataFrame
 if products_raw:
     processed = []
     for p in products_raw:
         kat_obj = p.get('kategorie')
-        nazwa_kat = kat_obj.get('nazwa', 'Brak') if isinstance(kat_obj, dict) else (kat_obj[0].get('nazwa') if kat_obj else "Brak")
+        nazwa_kat = kat_obj.get('nazwa', 'Brak') if isinstance(kat_obj, dict) else (kat_obj[0].get('nazwa') if (isinstance(kat_obj, list) and len(kat_obj)>0) else "Brak")
         processed.append({
             "ID": p['id'],
             "Produkt": p['nazwa'],
@@ -75,91 +67,98 @@ if products_raw:
         })
     df = pd.DataFrame(processed)
 else:
-    df = pd.DataFrame(columns=["ID", "Produkt", "Ilość", "Cena", "Kategoria", "Wartość"])
+    df = pd.DataFrame()
 
-# --- 4. INTERFEJS UŻYTKOWNIKA ---
+# --- 4. PANEL BOCZNY (ZARZĄDZANIE) ---
 
-# Sidebar - Panel Sterowania
 with st.sidebar:
-    st.title("🛡️ Admin Panel")
-    st.write("Zarządzaj bazą danych w czasie rzeczywistym.")
+    st.title("🛡️ Panel Sterowania")
     
-    with st.expander("🆕 Dodaj Nowy Produkt", expanded=True):
-        if categories_raw:
-            cat_map = {c['nazwa']: c['id'] for c in categories_raw}
-            with st.form("add_product_form", clear_on_submit=True):
-                n_name = st.text_input("Nazwa")
-                n_qty = st.number_input("Ilość", min_value=0.0)
-                n_price = st.number_input("Cena (PLN)", min_value=0.0)
-                n_cat = st.selectbox("Kategoria", options=list(cat_map.keys()))
-                
-                if st.form_submit_button("🔥 Zatwierdź i Dodaj"):
-                    if n_name:
-                        supabase.table("produkty").insert({
-                            "nazwa": n_name, "liczba": n_qty, 
-                            "cena": n_price, "kategoria_id": cat_map[n_cat]
-                        }).execute()
-                        st.success("Dodano produkt!")
-                        st.rerun()
-                    else:
-                        st.error("Wpisz nazwę!")
-    
+    # SEKCJA: DODAWANIE
+    st.subheader("➕ Dodaj Produkt")
+    if categories_raw:
+        cat_map = {c['nazwa']: c['id'] for c in categories_raw}
+        with st.form("add_form", clear_on_submit=True):
+            n_name = st.text_input("Nazwa produktu")
+            n_qty = st.number_input("Ilość", min_value=0.0)
+            n_price = st.number_input("Cena (PLN)", min_value=0.0)
+            n_cat = st.selectbox("Kategoria", options=list(cat_map.keys()))
+            if st.form_submit_button("Zapisz w bazie"):
+                if n_name:
+                    supabase.table("produkty").insert({
+                        "nazwa": n_name, "liczba": n_qty, "cena": n_price, "kategoria_id": cat_map[n_cat]
+                    }).execute()
+                    st.success("Produkt dodany!")
+                    st.rerun()
+
     st.divider()
-    if st.button("🗑️ Usuń Wybrany ID"):
-        id_to_del = st.number_input("Wpisz ID produktu", step=1, min_value=1)
-        if st.button("Potwierdź usunięcie"):
-            supabase.table("produkty").delete().eq("id", id_to_del).execute()
-            st.rerun()
 
-# Główny Ekran
-st.title("📊 ProStock ERP Dashboard")
+    # SEKCJA: USUWANIE (NAPRAWIONA)
+    st.subheader("🗑️ Usuń Produkt")
+    if not df.empty:
+        # Tworzymy listę opcji "Nazwa (ID)" dla łatwiejszego wyboru
+        delete_options = {f"{row['Produkt']} (ID: {row['ID']})": row['ID'] for _, row in df.iterrows()}
+        selected_to_delete = st.selectbox("Wybierz produkt do usunięcia", options=list(delete_options.keys()))
+        
+        if st.button("❌ Potwierdź usunięcie", type="primary"):
+            target_id = delete_options[selected_to_delete]
+            try:
+                supabase.table("produkty").delete().eq("id", target_id).execute()
+                st.warning(f"Usunięto produkt o ID: {target_id}")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Błąd podczas usuwania: {e}")
 
-# Metryki
+# --- 5. EKRAN GŁÓWNY (ANALITYKA) ---
+
+st.title("📊 Monitor Magazynu Pro")
+
 if not df.empty:
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("📦 Produkty", len(df), "Szt.")
-    m2.metric("💰 Kapitał", f"{df['Wartość'].sum():,.2f}", "PLN")
-    m3.metric("📉 Braki", len(df[df['Ilość'] < 10]), "Alert", delta_color="inverse")
-    m4.metric("🏷️ Kategorie", len(df['Kategoria'].unique()))
+    # Metryki
+    m1, m2, m3 = st.columns(3)
+    m1.metric("📦 Suma Produktów", f"{int(df['Ilość'].sum())} szt.")
+    m2.metric("💰 Całkowita Wartość", f"{df['Wartość'].sum():,.2f} PLN")
+    m3.metric("🏗️ Liczba Pozycji", len(df))
 
     st.divider()
 
-    # Wykresy
+    # Wykresy (Zamiast tabeli na środku)
     c1, c2 = st.columns([2, 1])
     
     with c1:
-        st.subheader("🗺️ Struktura Zasobów (Mapa Drzewa)")
-        fig_tree = px.treemap(df, path=['Kategoria', 'Produkt'], values='Wartość',
-                              color='Ilość', color_continuous_scale='Blues',
-                              template="plotly_dark")
-        st.plotly_chart(fig_tree, use_container_width=True)
-
+        st.subheader("📈 Stan Magazynowy")
+        fig_bar = px.bar(df, x="Produkt", y="Ilość", color="Kategoria", 
+                         text_auto=True, template="plotly_dark",
+                         color_discrete_sequence=px.colors.qualitative.Vivid)
+        st.plotly_chart(fig_bar, use_container_width=True)
+        
     with c2:
-        st.subheader("🍩 Wartość wg Kategorii")
-        fig_donut = px.pie(df, names="Kategoria", values="Wartość", hole=0.6,
-                           template="plotly_dark", color_discrete_sequence=px.colors.qualitative.Bold)
-        st.plotly_chart(fig_donut, use_container_width=True)
+        st.subheader("🍕 Podział Wartości")
+        fig_pie = px.pie(df, names="Kategoria", values="Wartość", 
+                         hole=0.5, template="plotly_dark")
+        st.plotly_chart(fig_pie, use_container_width=True)
 
-    # Tabela z Progress Barami
-    st.subheader("🔍 Szczegółowy Rejestr Magazynowy")
+    # Wizualne karty zamiast tabeli
+    st.subheader("🔍 Przegląd asortymentu")
     
-    # Dodajemy wyszukiwarkę
-    search = st.text_input("Filtruj tabelę...", placeholder="Wpisz nazwę produktu...")
-    dff = df[df['Produkt'].str.contains(search, case=False)] if search else df
-
-    st.dataframe(
-        dff,
-        column_config={
-            "Ilość": st.column_config.ProgressColumn("Dostępność", min_value=0, max_value=max(df['Ilość'])*1.2, format="%d"),
-            "Cena": st.column_config.NumberColumn("Cena jedn.", format="%.2f zł"),
-            "Wartość": st.column_config.NumberColumn("Suma", format="%.2f zł"),
-        },
-        use_container_width=True,
-        hide_index=True
-    )
+    # Wyszukiwarka
+    search = st.text_input("Szukaj produktu...", "")
     
-    # Eksport
-    st.download_button("💾 Pobierz Raport CSV", df.to_csv(index=False), "raport.csv", "text/csv")
+    filtered_df = df[df['Produkt'].str.contains(search, case=False)] if search else df
+    
+    # Wyświetlanie kart w kolumnach
+    cols = st.columns(3)
+    for idx, row in filtered_df.iterrows():
+        with cols[idx % 3]:
+            st.markdown(f"""
+            <div class="product-card">
+                <h4>{row['Produkt']}</h4>
+                <p>📦 Ilość: <b>{row['Ilość']}</b></p>
+                <p>💰 Cena: <b>{row['Cena']:.2f} zł</b></p>
+                <p>📁 Kategoria: {row['Kategoria']}</p>
+                <small>ID Systemowe: {row['ID']}</small>
+            </div>
+            """, unsafe_allow_html=True)
 
 else:
-    st.warning("Twoja baza danych jest pusta. Dodaj produkty w panelu bocznym po lewej stronie!")
+    st.info("Baza danych jest pusta. Skorzystaj z panelu po lewej, aby dodać dane.")
